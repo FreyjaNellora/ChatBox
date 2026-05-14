@@ -22,15 +22,26 @@ audit.checkpoint
 *.sqlite-wal
 *.sqlite-shm
 *.db
+agentchat.db
 
-# Secrets / credentials
+# Secrets / credentials / certificates
 .env
 .env.*
 *.pem
 *.key
+*.p12
+*.pfx
+*.crt
+*.cer
 *.token
-secrets.*
+secrets*
+*secret*
 token
+
+# Local-only config and runtime files
+*.local
+*.pid
+*.sock
 
 # Agent-specific local config and plans
 .mcp.json
@@ -75,6 +86,7 @@ coverage.xml
 build/
 dist/
 installer/Output/
+installer/vendor/
 *.spec.bak
 *.manifest
 
@@ -114,4 +126,5 @@ $RECYCLE.BIN/
 # Logs
 # ============================================================
 *.log
+*.log.*
 logs/
