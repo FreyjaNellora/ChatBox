@@ -1,0 +1,43 @@
+{
+  "name": "agentchat",
+  "displayName": "AgentChat",
+  "description": "Real-time chat broker for AI agent coordination",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "views": {
+      "explorer": [
+        {
+          "type": "webview",
+          "id": "agentchat.panel",
+          "name": "AgentChat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "agentchat.open",
+        "title": "Open AgentChat"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

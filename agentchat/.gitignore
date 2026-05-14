@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# AgentChat runtime data (PERSONAL / SENSITIVE)
+# Contains chat messages, agent names, session tokens, auth tokens, audit logs
+.agentchat/
+agentchat.db
+dispatch_comms.jsonl
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Node / Extension
+node_modules/
+extension/out/
+*.vsix
+
+# IDE
+.vscode/
+.idea/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/agentchat/
+dist/
+installer/Output/
+*.spec.bak
+
+# Secrets & local config (NEVER commit)
+.env
+.env.*
+*.local
+secrets*
+*secret*
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# Log files
+*.log
+*.log.*
+
+# Runtime state
+*.pid
+*.sock

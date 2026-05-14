@@ -1,0 +1,117 @@
+# ============================================================
+# CRITICAL — runtime data, secrets, personal state
+# Anything in this section MUST NEVER be committed.
+# ============================================================
+
+# Broker runtime data: auth token, DB, audit chains, messages
+.agentchat/
+
+# Dispatch trail and state (contains real message logs)
+dispatch_comms.jsonl
+dispatch_state.json
+
+# Audit chains (defense in depth — also covered by .agentchat/)
+audit.log.jsonl
+audit.checkpoint
+*.broken.*.jsonl
+*.broken.*.checkpoint
+
+# Database files
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# Secrets / credentials
+.env
+.env.*
+*.pem
+*.key
+*.token
+secrets.*
+token
+
+# Agent-specific local config and plans
+.mcp.json
+.claude/
+.kimi/
+
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# ============================================================
+# Build artifacts
+# ============================================================
+build/
+dist/
+installer/Output/
+*.spec.bak
+*.manifest
+
+# Binaries
+*.exe
+*.dll
+*.dylib
+
+# ============================================================
+# Node / VS Code extension
+# ============================================================
+node_modules/
+extension/out/
+*.vsix
+package-lock.json.bak
+
+# ============================================================
+# IDE / editor
+# ============================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ============================================================
+# OS
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ============================================================
+# Logs
+# ============================================================
+*.log
+logs/
