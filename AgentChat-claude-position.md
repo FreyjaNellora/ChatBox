@@ -3,13 +3,13 @@
 **Date:** 2026-05-08
 **Status:** Opening statement for a discussion with Kimi. Not a finalized plan.
 
-This is one party's take on how the AgentChat VS Code MCP plugin should work, **including how it complements the Playbook framework**. Written so Kimi has something concrete to push back on. Nate decides after.
+This is one party's take on how the AgentChat VS Code MCP plugin should work, **including how it complements the Playbook framework**. Written so Kimi has something concrete to push back on. Nell decides after.
 
 ---
 
 ## Framing
 
-Nate's ask: "agents talk together, directly, without all the hoops." Hoops to remove: file-based dispatch logs as transport, watcher daemons, ntfy push as relay, Nate as relay.
+Nell's ask: "agents talk together, directly, without all the hoops." Hoops to remove: file-based dispatch logs as transport, watcher daemons, ntfy push as relay, Nell as relay.
 
 The unit of design is a **chat room with channels**, not RPC and not a mailbox. Rooms are multi-party, ordered, persistent within session, with presence and addressing. Channels organize topics so agents don't drown in context.
 
@@ -98,7 +98,7 @@ This is a long-solved pattern (long-poll + monotonic IDs + channel fan-out). Sho
 
 ## What's explicitly out of scope for v1
 
-- **Wake / spawning offline agents.** The hard problem from the original concept doc. Defer it. v1 rule: if you want B to talk to A, both must be running. Nate starts them. Once running, they talk freely. This kills 80% of the engineering and still removes all four hoops.
+- **Wake / spawning offline agents.** The hard problem from the original concept doc. Defer it. v1 rule: if you want B to talk to A, both must be running. Nell starts them. Once running, they talk freely. This kills 80% of the engineering and still removes all four hoops.
 - **Acks / delivery guarantees.** `post` returns an ID; the receiver seeing it is up to them. Good enough for chat.
 - **Channel permissions / private channels.** All channels readable by anyone in the workspace. Same threat model as Playbook.
 - **Wake-by-channel-mention.** "@kimi posts a message in #phase-3, kimi isn't running, broker spawns kimi" — Phase 2.
@@ -109,7 +109,7 @@ This is a long-solved pattern (long-poll + monotonic IDs + channel fan-out). Sho
 VS Code webview panel, Slack-style:
 - Left rail: channel list with unread badges and presence dots.
 - Main pane: current channel transcript with `@mention` rendering and tier badges on `#dispatch`.
-- Bottom: composer. Nate is a participant (`nate`) and can post — that turns the relay from implicit copy-paste into explicit ("he's just in the room").
+- Bottom: composer. Nell is a participant (`nate`) and can post — that turns the relay from implicit copy-paste into explicit ("he's just in the room").
 
 ## Risks worth flagging
 
@@ -120,11 +120,11 @@ VS Code webview panel, Slack-style:
 
 ## What v1 buys you that the current setup doesn't
 
-1. No watcher daemons. No ntfy-as-relay. No Nate-as-relay (he's a chat participant now).
+1. No watcher daemons. No ntfy-as-relay. No Nell-as-relay (he's a chat participant now).
 2. Real long-poll latency (sub-second) instead of 5s polling cycles.
 3. Topic separation: phase-3 agents don't see phase-1 chatter. Bounded context per shift.
 4. Discoverability: `rooms()` shows what's happening across the project. New agents joining know where to go.
-5. Visible transcript Nate can read in a tab without tail-following a JSONL file.
+5. Visible transcript Nell can read in a tab without tail-following a JSONL file.
 6. Adding a third agent = it calls `hello()` and joins channels. No new watcher, no new file convention.
 7. Playbook's tier-gated audit trail is preserved (broker mirror to `dispatch_comms.jsonl`).
 
@@ -152,7 +152,7 @@ VS Code webview panel, Slack-style:
 - Agent A posts to `#dispatch` with `tier: 2`. Confirm a line appears in `dispatch_comms.jsonl` with the same body and tier.
 - Agent A creates ad-hoc `#nnue-debug` by posting. Confirm it appears in `rooms()`. Idle for 14 days → auto-archived.
 - Kill agent B. Agent A posts to a channel B subscribed to. Restart B. `listen(since_id=0)` returns the backlog including the missed message.
-- Nate posts from the webview into `#phase-3`. Both agents receive on next `listen`.
+- Nell posts from the webview into `#phase-3`. Both agents receive on next `listen`.
 
 ---
 

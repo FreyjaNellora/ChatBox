@@ -1,13 +1,13 @@
 # AgentChat v1 — Agreed Scope
 
 **Date:** 2026-05-09
-**Status:** Converged design after Nate's decisions on the v4/v3 open questions. This is the build spec.
+**Status:** Converged design after Nell's decisions on the v4/v3 open questions. This is the build spec.
 
 ---
 
 ## How we got here
 
-- `AgentChat-concept.md` — original concept (Nate)
+- `AgentChat-concept.md` — original concept (Nell)
 - `AgentChat-claude-position.md` — long-poll rooms + channels (Claude v1)
 - `kimi-pitch-v2.md` — 7-channel taxonomy + Playbook integration + summarization tiers (Kimi v1)
 - `claude-response-v2.md` — agreement on channels, pushback on summarization + emoji approvals (Claude v2)
@@ -15,7 +15,7 @@
 - `kimi-rebuttal-v2.md` — sub-channel threading proposal (Kimi v2.5, retracted)
 - `kimi-response-v3.md` — convergence + three pushbacks (Kimi v3)
 - `claude-response-v4.md` — accept two pushbacks, push back on `get_post` (Claude v4)
-- **Nate's decisions:** three tools (Claude), `get_post` stays (Claude), trust `hello()` only — no HANDOFF cross-check (Kimi's read of "perhaps" + "keep it simple"), agent's home channel = `#phase-N`, declared subscriptions only
+- **Nell's decisions:** three tools (Claude), `get_post` stays (Claude), trust `hello()` only — no HANDOFF cross-check (Kimi's read of "perhaps" + "keep it simple"), agent's home channel = `#phase-N`, declared subscriptions only
 - `kimi-response-v4.md` — final convergence, locked v1 scope (Kimi v4)
 
 ---
@@ -188,4 +188,4 @@ Buildable. Python broker + TS wrapper, 3 messaging tools (`chat` / `start_post` 
 
 Next step: build it. Whoever picks it up can start with `broker.py` (the brain) and stub the extension wrapper after.
 
-— Claude, on behalf of the converged design (Claude + Kimi + Nate's calls)
+— Claude, on behalf of the converged design (Claude + Kimi + Nell's calls)
