@@ -8,15 +8,15 @@ ChatBox is the conversation layer of a larger environment where AI agents talk, 
 
 The core is a Python broker. Agents connect over MCP (stdio) or a localhost HTTP API. State is SQLite-backed.
 
-## The doorbell — event-driven autonomy
+## Event-driven autonomy runtime
 
-The hard part of multi-agent coordination is *liveness*: an LLM agent is a dead process between turns, so something has to wake it — without polling, without races, without runaway loops. ChatBox's answer is a **doorbell, not an alarm clock**:
+The hard part of multi-agent coordination is *liveness*: an LLM agent is a dead process between turns, so something has to dispatch it — without polling, without races, without runaway loops. ChatBox is **event-driven and message-triggered**: an agent turn is dispatched on a new message, never on a clock (the standard contrast is an interrupt versus a polling loop).
 
-- **One waker.** The broker is the only thing that decides an agent should wake, and only when a real message lands in a channel it subscribes to. Nothing fires on a clock.
-- **Durable cursors.** Each agent has a server-tracked read cursor, so "what has this agent already seen?" survives restarts and never double-delivers.
-- **A liveness state machine** (`ASLEEP → WAKING → BUSY → ASLEEP`) emits exactly one wake per event; if an agent is already busy, the message is just queued for its next drain.
-- **A supervisor** answers each wake by running one headless agent turn (drain inbox → act → ack → exit), then returns the agent to sleep. Idle cost is zero — it blocks in a server-side long-poll, burning nothing until there's real work.
-- **Bounded autonomy.** Every wake is capped (max turns), watched for livelock (repeating output) and give-up signals, and escalates to a human channel rather than spinning. A crashing turn unwedges safely back to ASLEEP.
+- **Single dispatcher.** The broker is the only component that decides an agent should run, and only when a real message is published to a channel it subscribes to. Nothing fires on a timer.
+- **Durable consumer offsets.** The broker tracks each agent's read offset (a durable consumer offset, as in a message queue), so "what has this agent already seen?" survives restarts and delivery is never duplicated.
+- **A finite state machine** (`ASLEEP → WAKING → BUSY → ASLEEP`) dispatches exactly one turn per event; if an agent is already busy, the message is queued for its next drain.
+- **A supervisor process** executes each dispatched turn by running one headless agent turn (drain inbox → act → ack → exit), then returns the agent to the idle state. Idle cost is zero — it blocks in a server-side long-poll, consuming nothing until there's real work.
+- **Bounded autonomy.** Every turn is capped (max turns), watched for livelock (repeating output) and give-up signals, and escalates to a human channel rather than spinning. A crashing turn recovers safely back to ASLEEP.
 
 The full operator guide — launch it, the stub (no-LLM) demo, real-spawn mode, every config knob — is in **[agentchat/RUN_DOORBELL.md](agentchat/RUN_DOORBELL.md)**.
 
@@ -24,7 +24,7 @@ The full operator guide — launch it, the stub (no-LLM) demo, real-spawn mode, 
 
 Honest about where this is:
 
-- **Working today.** The v1 broker (channels, structured posts, replies, real-time long-poll delivery, dispatch mirroring to a durable JSONL trail) plus v1.5 hardening (admission auth, hash-chained audit log, integrity guards) — and on top of that the **event-driven autonomy runtime ("the doorbell")**: durable per-agent cursors, a liveness state machine, a supervisor that wakes one headless turn per real message, per-agent auth (subscription or API), and bounded-autonomy guardrails. **44 unit tests + a live MCP end-to-end smoke (17 tools) passing.**
+- **Working today.** The v1 broker (channels, structured posts, replies, real-time long-poll delivery, dispatch mirroring to a durable JSONL trail) plus v1.5 hardening (admission auth, hash-chained audit log, integrity guards) — and on top of that the **event-driven autonomy runtime**: durable per-agent consumer offsets, a finite state machine, a supervisor process that dispatches one headless turn per real message, per-agent auth (subscription or API), and bounded-autonomy guardrails. **44 unit tests + a live MCP end-to-end smoke (17 tools) passing.**
 - **Not posted / WIP.** This is a personal-scale project and not everything is here — but what *is* here works, more or less, as described. The real-LLM spawn path (`claude -p` / `kimi -p`) is wired and unit-tested but needs a logged-in CLI to run live; the fully process-isolated multi-supervisor topology and the security-research directions below are aspiration, not promise.
 
 Use what's useful, freely (MIT). Interfaces and schemas will still change.
@@ -59,11 +59,11 @@ python -m pytest tests/ -v
 
 ```
 agentchat/              The broker and everything that ships with it
-  broker_core.py        Shared business logic (SQLite, channels, messaging, auth, cursors, liveness)
+  broker_core.py        Shared business logic (SQLite, channels, messaging, auth, consumer offsets, state machine)
   broker.py             MCP stdio transport (17 tools)
   broker_http.py        HTTP transport
   broker_daemon.py      Long-running service entry point
-  supervisor.py         The doorbell answerer — runs one agent turn per wake
+  supervisor.py         Supervisor process — executes one agent turn per dispatch
   guardrails.py         Bounded autonomy: livelock + give-up detection, escalation
   engines.py            Per-agent auth resolution (subscription or API key)
   cli_runner.py         Real headless turn runner (claude -p / kimi -p)
@@ -73,7 +73,7 @@ agentchat/              The broker and everything that ships with it
   extension/            VS Code extension (thin TypeScript wrapper)
   installer/            Windows installer (Inno Setup + NSSM service)
   tests/                Broker, autonomy, audit, and integration tests
-  RUN_DOORBELL.md       Operator guide for the doorbell hub
+  RUN_DOORBELL.md       Operator guide for the autonomy runtime
 ```
 
 Design history docs live at the project root.
@@ -103,7 +103,7 @@ See [SECURITY.md](SECURITY.md) for the short version + how to report an issue.
 
 ## Where this is going — goals & aspirations
 
-The end goal is a workspace you fully own where several AI agents (Claude, Kimi, and anything else that speaks the protocols) **remember** (WhiteBox), **coordinate** (ChatBox), and **act on their own** (the doorbell) — bounded, audited, and always under human authority. If it all comes together, you preside over a small swarm that wakes only on real events, shares one durable memory, runs each turn capped and recorded, and asks a human when it should.
+The end goal is a workspace you fully own where several AI agents (Claude, Kimi, and anything else that speaks the protocols) **remember** (WhiteBox), **coordinate** (ChatBox), and **act on their own** (the event-driven autonomy runtime) — bounded, audited, and always under human authority. If it all comes together, you preside over a set of agents that run only on real events, share one durable memory, execute each turn capped and recorded, and ask a human when they should.
 
 Getting there *safely* is itself a research project, and the directions we want to explore are **defensive**:
 
