@@ -153,6 +153,12 @@ async def list_tools() -> list[Tool]:
                  "agent_name": {"type": "string"}, "message_id": {"type": "integer"},
                  "auth_token": {"type": "string"}},
               "required": ["agent_name", "message_id"]}),
+        Tool(name="ack", description="Advance this agent's durable read cursor for a channel to up_to_id (monotonic, idempotent)",
+             inputSchema={"type": "object", "properties": {
+                 "agent_name": {"type": "string"}, "channel": {"type": "string"},
+                 "up_to_id": {"type": "integer"},
+                 "auth_token": {"type": "string"}},
+              "required": ["agent_name", "channel", "up_to_id"]}),
     ]
 
 
@@ -221,6 +227,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         elif name == "unresolve_message":
             result = await broker.unresolve_message(
                 arguments["agent_name"], arguments["message_id"],
+                session_token=arguments.get("session_token"))
+        elif name == "ack":
+            result = await broker.ack(
+                arguments["agent_name"], arguments["channel"], arguments["up_to_id"],
                 session_token=arguments.get("session_token"))
         else:
             return _err("UNKNOWN_TOOL", f"Unknown tool: {name}")

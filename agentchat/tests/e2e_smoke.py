@@ -42,7 +42,7 @@ async def main():
 
             tools = await session.list_tools()
             print(f"[tools] broker exposes {len(tools.tools)} tools")
-            assert len(tools.tools) == 16, f"expected 16 tools, got {len(tools.tools)}"
+            assert len(tools.tools) == 17, f"expected 17 tools, got {len(tools.tools)}"
 
             # 1. hello
             r = await call(session, "hello", {
@@ -85,6 +85,27 @@ async def main():
             assert len(r["messages"]) == 1
             assert r["messages"][0]["body"] == "hello from claude over real MCP stdio"
             assert r["messages"][0]["author"] == "claude"
+
+            # 4b. ack the message over MCP, then re-listen — the durable cursor
+            # should hide it (proves the new ack tool + effective_since drain).
+            msg_id = r["messages"][0]["id"]
+            r = await call(session, "ack", {
+                "agent_name": "claude",
+                "channel": "#phase-3",
+                "up_to_id": msg_id,
+                "session_token": session_tok,
+            })
+            assert r["status"] == "ok" and r["last_read_id"] == msg_id
+            r = await call(session, "listen", {
+                "agent_name": "claude",
+                "channels": ["#phase-3"],
+                "view": "full",
+                "since_id": 0,
+                "timeout_ms": 200,
+                "session_token": session_tok,
+            })
+            assert len(r["messages"]) == 0, "cursor should hide the acked message"
+            print("[ack] cursor advanced over MCP; re-listen returned 0")
 
             # 5. start_post + reply roundtrip
             r = await call(session, "start_post", {

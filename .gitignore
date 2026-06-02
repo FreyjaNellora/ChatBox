@@ -48,6 +48,21 @@ token
 .claude/
 .kimi/
 
+# Internal strategy / scratch docs — NOT part of the public project.
+# Explicitly excluded so a `git add -A` can never publish them.
+backdoor-gameplan.md
+backdoor-gameplan-pitch-for-kimi.md
+merge-pitch-for-kimi.md
+factory-frame-pitch.md
+game-simulation-plan.md
+DISTRIBUTION_PLAN.md
+playbook-correction.md
+agent-comms.md
+honey-projects/
+test-artifacts/
+*-pitch-for-kimi.md
+*-pitch.md
+
 # ============================================================
 # Python
 # ============================================================

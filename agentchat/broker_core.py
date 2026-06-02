@@ -23,6 +23,12 @@ from audit_log import AuditLog
 
 SESSION_TTL_SECONDS = 3600  # 1 hour default session lifetime
 
+# Liveness states for the doorbell autonomy model (Appendix A.4). A sleeping
+# agent is a dead process: the broker rings (ASLEEP -> WAKING) and a supervisor
+# answers (WAKING -> BUSY -> ASLEEP). See compute_wakes() / get_liveness().
+ASLEEP, WAKING, BUSY, IDLE = "ASLEEP", "WAKING", "BUSY", "IDLE"
+LIVENESS_STATES = frozenset({ASLEEP, WAKING, BUSY, IDLE})
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -191,6 +197,7 @@ class Broker:
         self._ensure_paths()
         self._init_db()
         self._clear_stale_sessions()
+        self._reconcile_liveness_on_start()
         self._load_channels()
         self._ensure_phase_channels()
         self._post_integrity_alert_if_needed()
@@ -279,6 +286,31 @@ class Broker:
                 session_issued_ts REAL NOT NULL,
                 session_expires_ts REAL NOT NULL,
                 last_seen_ts REAL NOT NULL
+            )
+        """)
+        # Durable per-(agent, channel) read cursor. Lives in its OWN table so it
+        # SURVIVES broker restarts — `_clear_stale_sessions` wipes `agents`, but
+        # the cursor must persist or the doorbell loses track of what each agent
+        # has already drained. Advanced via ack(); read by _drain().
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cursors (
+                agent TEXT NOT NULL,
+                channel TEXT NOT NULL,
+                last_read_id INTEGER NOT NULL DEFAULT 0,
+                updated_ts REAL,
+                PRIMARY KEY (agent, channel)
+            )
+        """)
+        # Liveness state machine (Appendix A.4). Own table; the cursor table is
+        # restart-durable but liveness STATE is reset to ASLEEP on restart (see
+        # _reconcile_liveness_on_start) — session_id is kept for resume.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS liveness (
+                agent TEXT PRIMARY KEY,
+                state TEXT NOT NULL DEFAULT 'ASLEEP',
+                session_id TEXT,
+                waking_ts REAL,
+                updated_ts REAL
             )
         """)
         # Migration: add resolved column to pre-existing databases
@@ -690,7 +722,7 @@ class Broker:
         agent.last_seen = time.time()
 
         try:
-            messages = self._fetch_messages(channels, view, since_id, max_msgs)
+            messages = self._drain(agent_name, channels, view, since_id, max_msgs)
             if messages:
                 return {"status": "ok", "messages": messages, "timed_out": False}
 
@@ -701,8 +733,134 @@ class Broker:
         finally:
             agent.waiter = None
 
-        messages = self._fetch_messages(channels, view, since_id, max_msgs)
+        messages = self._drain(agent_name, channels, view, since_id, max_msgs)
         return {"status": "ok", "messages": messages, "timed_out": len(messages) == 0}
+
+    async def ack(self, agent_name: str, channel: str, up_to_id: int,
+                  auth_token: Optional[str] = None, session_token: Optional[str] = None) -> dict:
+        """Advance the agent's durable read cursor for `channel` to `up_to_id`.
+
+        Monotonic (never moves backward) and idempotent — re-acking the same or
+        an older id is a no-op. This cursor is what lets the doorbell ask "has
+        this agent already seen everything up to id N?" and survives restarts.
+        """
+        _validate_channel_name(channel)
+        if not isinstance(up_to_id, int) or isinstance(up_to_id, bool) or up_to_id < 0:
+            raise ValidationError("up_to_id must be a non-negative integer")
+        self._verify_session(agent_name, session_token)
+        new_val = max(self._get_cursor(agent_name, channel), up_to_id)
+        conn = sqlite3.connect(str(self.db_path))
+        conn.execute(
+            "INSERT OR REPLACE INTO cursors (agent, channel, last_read_id, updated_ts) "
+            "VALUES (?, ?, ?, ?)",
+            (agent_name, channel, new_val, time.time()),
+        )
+        conn.commit()
+        conn.close()
+        self._audit_log("ACK", agent_name, {"channel": channel, "up_to_id": new_val})
+        return {"status": "ok", "channel": channel, "last_read_id": new_val}
+
+    def _get_cursor(self, agent_name: str, channel: str) -> int:
+        """Durable read cursor for (agent, channel); 0 if never acked."""
+        conn = sqlite3.connect(str(self.db_path))
+        cur = conn.execute(
+            "SELECT last_read_id FROM cursors WHERE agent = ? AND channel = ?",
+            (agent_name, channel),
+        )
+        row = cur.fetchone()
+        conn.close()
+        return int(row[0]) if row else 0
+
+    def _drain(self, agent_name: str, channels: list[str], view: str,
+               since_id: int, max_msgs: int) -> list[dict]:
+        """Fetch unseen messages, honoring the per-channel server cursor.
+
+        effective_since(ch) = max(client since_id, cursor[agent, ch]). With no
+        ack ever issued the cursor is 0, so this returns exactly what the old
+        single fetch did — no flag day for existing `since_id`-only clients.
+        Per-channel flooring is applied in SQL (before LIMIT), so pagination
+        stays correct even when one channel is fully drained.
+        """
+        merged: list[dict] = []
+        for ch in channels:
+            floor = max(since_id, self._get_cursor(agent_name, ch))
+            merged.extend(self._fetch_messages([ch], view, floor, max_msgs))
+        merged.sort(key=lambda m: m["id"])
+        return merged[:max_msgs]
+
+    # -- Liveness (doorbell autonomy, A.4) ---------------------------------
+
+    def _reconcile_liveness_on_start(self):
+        """On restart no spawned agent turns survive (their processes died with
+        the previous broker generation), so reset every liveness STATE to ASLEEP
+        — nothing is left wedged in WAKING/BUSY. session_id is KEPT so a future
+        wake can `resume` the conversation; the read cursor (separate table) is
+        untouched."""
+        conn = sqlite3.connect(str(self.db_path))
+        conn.execute("UPDATE liveness SET state = ?, waking_ts = NULL", (ASLEEP,))
+        conn.commit()
+        conn.close()
+
+    def get_liveness(self, agent_name: str) -> dict:
+        """Liveness row for an agent; ASLEEP with no session if never set."""
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT state, session_id, waking_ts FROM liveness WHERE agent = ?",
+            (agent_name,),
+        ).fetchone()
+        conn.close()
+        if row is None:
+            return {"state": ASLEEP, "session_id": None, "waking_ts": None}
+        return {"state": row["state"], "session_id": row["session_id"], "waking_ts": row["waking_ts"]}
+
+    def set_liveness(self, agent_name: str, state: str,
+                     session_id: Optional[str] = None, waking_ts: Optional[float] = None) -> dict:
+        """Transition an agent's liveness. session_id is PRESERVED when None is
+        passed (so marking ASLEEP keeps the resume handle); pass "" to clear it."""
+        if state not in LIVENESS_STATES:
+            raise ValidationError(f"Unknown liveness state: {state!r}")
+        prev = self.get_liveness(agent_name)
+        sid = prev["session_id"] if session_id is None else (session_id or None)
+        conn = sqlite3.connect(str(self.db_path))
+        conn.execute(
+            "INSERT OR REPLACE INTO liveness (agent, state, session_id, waking_ts, updated_ts) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (agent_name, state, sid, waking_ts, time.time()),
+        )
+        conn.commit()
+        conn.close()
+        return {"agent": agent_name, "state": state, "session_id": sid}
+
+    def compute_wakes(self, channel: str, latest_id: int,
+                      candidates: Optional[list] = None) -> list[str]:
+        """Decide who to wake for a new message (channel, latest_id) — A.4.
+
+        Returns the agents transitioned ASLEEP -> WAKING. Idempotent: an agent
+        already WAKING/BUSY/IDLE is never re-woken (the message stays durable in
+        `messages` and is drained on its next turn — the enqueue-on-BUSY rule).
+        Pure decision: this does NOT spawn anything; the supervisor consumes the
+        returned list and owns the actual process spawn. Subscriptions are read
+        from the durable table, so sleeping (non-live) agents are wakeable.
+        """
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        subs = [r["agent"] for r in conn.execute(
+            "SELECT agent FROM subscriptions WHERE channel = ?", (channel,)).fetchall()]
+        conn.close()
+        # Restrict to the supervisor's managed (spawnable) agents when given, so
+        # human/observer subscribers are never auto-woken.
+        if candidates is not None:
+            allowed = set(candidates)
+            subs = [a for a in subs if a in allowed]
+        woken: list[str] = []
+        for name in subs:
+            if self.get_liveness(name)["state"] != ASLEEP:
+                continue  # BUSY/WAKING/IDLE -> enqueue, drained on next turn
+            if self._get_cursor(name, channel) < latest_id:
+                self.set_liveness(name, WAKING, waking_ts=time.time())
+                woken.append(name)
+        return woken
 
     def _fetch_messages(self, channels: list[str], view: str, since_id: int, max_msgs: int) -> list[dict]:
         conn = sqlite3.connect(str(self.db_path))
